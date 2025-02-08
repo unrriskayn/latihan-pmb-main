@@ -9,69 +9,27 @@
  * file that was distributed with this source code.
  */
 
-namespace Symfony\Component\Routing\Loader;
-
-use Symfony\Component\Config\Loader\FileLoader;
-use Symfony\Component\Config\Resource\FileResource;
-use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
-use Symfony\Component\Routing\RouteCollection;
+namespace Symfony\Component\Translation\Loader;
 
 /**
- * PhpFileLoader loads routes from a PHP file.
- *
- * The file must return a RouteCollection instance.
+ * PhpFileLoader loads translations from PHP files returning an array of translations.
  *
  * @author Fabien Potencier <fabien@symfony.com>
- * @author Nicolas grekas <p@tchwork.com>
- * @author Jules Pietri <jules@heahprod.com>
  */
 class PhpFileLoader extends FileLoader
 {
-    /**
-     * Loads a PHP file.
-     */
-    public function load(mixed $file, ?string $type = null): RouteCollection
+    private static ?array $cache = [];
+
+    protected function loadResource(string $resource): array
     {
-        $path = $this->locator->locate($file);
-        $this->setCurrentDir(\dirname($path));
-
-        // the closure forbids access to the private scope in the included file
-        $loader = $this;
-        $load = \Closure::bind(static function ($file) use ($loader) {
-            return include $file;
-        }, null, ProtectedPhpFileLoader::class);
-
-        $result = $load($path);
-
-        if (\is_object($result) && \is_callable($result)) {
-            $collection = $this->callConfigurator($result, $path, $file);
-        } else {
-            $collection = $result;
+        if ([] === self::$cache && \function_exists('opcache_invalidate') && filter_var(\ini_get('opcache.enable'), \FILTER_VALIDATE_BOOL) && (!\in_array(\PHP_SAPI, ['cli', 'phpdbg', 'embed'], true) || filter_var(\ini_get('opcache.enable_cli'), \FILTER_VALIDATE_BOOL))) {
+            self::$cache = null;
         }
 
-        $collection->addResource(new FileResource($path));
+        if (null === self::$cache) {
+            return require $resource;
+        }
 
-        return $collection;
+        return self::$cache[$resource] ??= require $resource;
     }
-
-    public function supports(mixed $resource, ?string $type = null): bool
-    {
-        return \is_string($resource) && 'php' === pathinfo($resource, \PATHINFO_EXTENSION) && (!$type || 'php' === $type);
-    }
-
-    protected function callConfigurator(callable $result, string $path, string $file): RouteCollection
-    {
-        $collection = new RouteCollection();
-
-        $result(new RoutingConfigurator($collection, $this, $path, $file, $this->env));
-
-        return $collection;
-    }
-}
-
-/**
- * @internal
- */
-final class ProtectedPhpFileLoader extends PhpFileLoader
-{
 }
